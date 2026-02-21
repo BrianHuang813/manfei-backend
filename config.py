@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: list[str] = [
         "http://localhost:5173",
         "http://localhost:3000",
+        "https://www.manfeispa.com",
+        "https://manfeispa.com",
+        "https://manfei-frontend-new.vercel.app",
     ]
 
     @field_validator("DATABASE_URL", mode="before")
