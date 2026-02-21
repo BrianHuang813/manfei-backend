@@ -1,6 +1,5 @@
 from pydantic_settings import BaseSettings
 from pydantic import field_validator
-import json
 from typing import Optional
 
 
@@ -31,10 +30,6 @@ class Settings(BaseSettings):
     # Application URLs
     FRONTEND_URL: str = "http://localhost:5173"
     BACKEND_URL: str = "http://localhost:8000"
-    CORS_ORIGINS: list[str] = [
-        "http://localhost:5173",
-        "http://localhost:3000",
-    ]
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
@@ -51,29 +46,6 @@ class Settings(BaseSettings):
             return url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
         return url
-
-    @field_validator("CORS_ORIGINS", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, value):
-        if isinstance(value, list):
-            return [str(origin).strip() for origin in value if str(origin).strip()]
-
-        if isinstance(value, str):
-            raw = value.strip()
-            if not raw:
-                return []
-
-            if raw.startswith("["):
-                try:
-                    parsed = json.loads(raw)
-                    if isinstance(parsed, list):
-                        return [str(origin).strip() for origin in parsed if str(origin).strip()]
-                except json.JSONDecodeError:
-                    pass
-
-            return [origin.strip() for origin in raw.split(",") if origin.strip()]
-
-        return value
     
     class Config:
         env_file = ".env"
