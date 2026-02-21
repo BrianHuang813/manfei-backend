@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -9,6 +9,7 @@ from database import get_db
 from models import User, UserRole
 from schemas import Token, UserResponse
 from config import settings
+from main import limiter
 from auth import (
     create_access_token,
     create_refresh_token,
@@ -25,7 +26,8 @@ state_store = {}
 
 
 @router.get("/line")
-async def line_login_redirect():
+@limiter.limit("5/minute")
+async def line_login_redirect(request: Request):
     """Redirect to LINE Login page."""
     state = secrets.token_urlsafe(32)
     state_store[state] = True  # Store state for verification
@@ -45,7 +47,9 @@ async def line_login_redirect():
 
 
 @router.get("/callback")
+@limiter.limit("5/minute")
 async def line_callback(
+    request: Request,
     code: str = Query(...),
     state: str = Query(...),
     db: AsyncSession = Depends(get_db)
@@ -133,7 +137,9 @@ async def get_current_user_info(
 
 
 @router.post("/refresh", response_model=Token)
+@limiter.limit("5/minute")
 async def refresh_access_token(
+    request: Request,
     refresh_token: str = Body(..., embed=True),
     db: AsyncSession = Depends(get_db)
 ):

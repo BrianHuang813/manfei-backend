@@ -21,6 +21,9 @@ httpx==0.26.0
 # CORS
 python-dotenv==1.0.1
 
+# Rate Limiting
+slowapi>=0.1.9
+
 # Image Upload
 cloudinary>=1.36.0
 

@@ -125,11 +125,11 @@ async def get_public_testimonials(db: AsyncSession = Depends(get_db)):
 
 @router.get("/portfolio", response_model=List[PortfolioResponse])
 async def get_public_portfolio(db: AsyncSession = Depends(get_db)):
-    """Get active portfolio items ordered by display_order."""
+    """Get active portfolio items ordered by sort_order."""
     result = await db.execute(
         select(Portfolio)
         .where(Portfolio.is_active == True)
-        .order_by(Portfolio.display_order, Portfolio.sort_order)
+        .order_by(Portfolio.sort_order)
     )
     return result.scalars().all()
 
@@ -140,7 +140,7 @@ async def get_portfolio_by_category(db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(Portfolio)
         .where(Portfolio.is_active == True)
-        .order_by(Portfolio.category, Portfolio.display_order, Portfolio.sort_order)
+        .order_by(Portfolio.category, Portfolio.sort_order)
     )
     portfolio_items = result.scalars().all()
     
@@ -156,3 +156,12 @@ async def get_portfolio_by_category(db: AsyncSession = Depends(get_db)):
         })
     
     return dict(grouped)
+
+
+@router.get("/settings")
+async def get_public_settings(db: AsyncSession = Depends(get_db)):
+    """Get public site settings (contact info, social links, etc.)."""
+    from models import SiteSetting
+    result = await db.execute(select(SiteSetting))
+    settings_list = result.scalars().all()
+    return {s.key: s.value for s in settings_list}

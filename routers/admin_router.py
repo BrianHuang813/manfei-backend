@@ -55,7 +55,15 @@ async def get_news(news_id: int, db: AsyncSession = Depends(get_db)):
 @router.post("/news", response_model=NewsResponse, status_code=status.HTTP_201_CREATED)
 async def create_news(news: NewsCreate, db: AsyncSession = Depends(get_db)):
     """Create a new news item."""
-    db_news = News(**news.dict())
+    # Auto-assign sort_order if not provided or <= 0
+    if news.sort_order <= 0:
+        max_result = await db.execute(select(func.max(News.sort_order)))
+        max_order = max_result.scalar() or 0
+        news_dict = news.dict()
+        news_dict['sort_order'] = max_order + 1
+        db_news = News(**news_dict)
+    else:
+        db_news = News(**news.dict())
     db.add(db_news)
     await db.commit()
     await db.refresh(db_news)
@@ -122,7 +130,14 @@ async def get_service(service_id: int, db: AsyncSession = Depends(get_db)):
 @router.post("/services", response_model=ServiceResponse, status_code=status.HTTP_201_CREATED)
 async def create_service(service: ServiceCreate, db: AsyncSession = Depends(get_db)):
     """Create a new service."""
-    db_service = Service(**service.dict())
+    if service.sort_order <= 0:
+        max_result = await db.execute(select(func.max(Service.sort_order)))
+        max_order = max_result.scalar() or 0
+        svc_dict = service.dict()
+        svc_dict['sort_order'] = max_order + 1
+        db_service = Service(**svc_dict)
+    else:
+        db_service = Service(**service.dict())
     db.add(db_service)
     await db.commit()
     await db.refresh(db_service)
@@ -189,7 +204,14 @@ async def get_product(product_id: int, db: AsyncSession = Depends(get_db)):
 @router.post("/products", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
 async def create_product(product: ProductCreate, db: AsyncSession = Depends(get_db)):
     """Create a new product."""
-    db_product = Product(**product.dict())
+    if product.sort_order <= 0:
+        max_result = await db.execute(select(func.max(Product.sort_order)))
+        max_order = max_result.scalar() or 0
+        prod_dict = product.dict()
+        prod_dict['sort_order'] = max_order + 1
+        db_product = Product(**prod_dict)
+    else:
+        db_product = Product(**product.dict())
     db.add(db_product)
     await db.commit()
     await db.refresh(db_product)
@@ -256,7 +278,14 @@ async def get_testimonial(testimonial_id: int, db: AsyncSession = Depends(get_db
 @router.post("/testimonials", response_model=TestimonialResponse, status_code=status.HTTP_201_CREATED)
 async def create_testimonial(testimonial: TestimonialCreate, db: AsyncSession = Depends(get_db)):
     """Create a new testimonial."""
-    db_testimonial = Testimonial(**testimonial.dict())
+    if testimonial.sort_order <= 0:
+        max_result = await db.execute(select(func.max(Testimonial.sort_order)))
+        max_order = max_result.scalar() or 0
+        test_dict = testimonial.dict()
+        test_dict['sort_order'] = max_order + 1
+        db_testimonial = Testimonial(**test_dict)
+    else:
+        db_testimonial = Testimonial(**testimonial.dict())
     db.add(db_testimonial)
     await db.commit()
     await db.refresh(db_testimonial)
@@ -300,11 +329,11 @@ async def list_portfolio(
     skip: int = 0,
     limit: int = 100
 ):
-    """List all portfolio items ordered by category and sort_order."""
+    """List all portfolio items ordered by sort_order."""
     result = await db.execute(
         select(Portfolio)
         .options(selectinload(Portfolio.service))
-        .order_by(Portfolio.display_order, Portfolio.sort_order)
+        .order_by(Portfolio.sort_order)
         .offset(skip)
         .limit(limit)
     )
@@ -343,11 +372,32 @@ async def get_portfolio(portfolio_id: int, db: AsyncSession = Depends(get_db)):
 @router.post("/portfolio", response_model=PortfolioResponse, status_code=status.HTTP_201_CREATED)
 async def create_portfolio(portfolio: PortfolioCreate, db: AsyncSession = Depends(get_db)):
     """Create a new portfolio item."""
-    db_portfolio = Portfolio(**portfolio.dict())
+    port_dict = portfolio.dict()
+    # Sync display_order to sort_order for unified ordering
+    if port_dict.get('display_order', 0) > 0 and port_dict.get('sort_order', 0) <= 0:
+        port_dict['sort_order'] = port_dict['display_order']
+    # Auto-assign sort_order if not provided
+    if port_dict.get('sort_order', 0) <= 0:
+        max_result = await db.execute(select(func.max(Portfolio.sort_order)))
+        max_order = max_result.scalar() or 0
+        port_dict['sort_order'] = max_order + 1
+    # Keep display_order in sync with sort_order
+    port_dict['display_order'] = port_dict['sort_order']
+    db_portfolio = Portfolio(**port_dict)
     db.add(db_portfolio)
     await db.commit()
     await db.refresh(db_portfolio)
-    return db_portfolio
+    # Return with service_name
+    svc_name = None
+    if db_portfolio.service_id:
+        svc_result = await db.execute(select(Service).where(Service.id == db_portfolio.service_id))
+        svc = svc_result.scalar_one_or_none()
+        if svc:
+            svc_name = svc.name
+    return {
+        **{c.name: getattr(db_portfolio, c.name) for c in db_portfolio.__table__.columns},
+        "service_name": svc_name,
+    }
 
 
 @router.put("/portfolio/{portfolio_id}", response_model=PortfolioResponse)
@@ -360,6 +410,9 @@ async def update_portfolio(portfolio_id: int, portfolio: PortfolioUpdate, db: As
     
     for key, value in portfolio.dict(exclude_unset=True).items():
         setattr(db_portfolio, key, value)
+    # Keep display_order in sync with sort_order
+    if db_portfolio.sort_order != db_portfolio.display_order:
+        db_portfolio.display_order = db_portfolio.sort_order
     
     await db.commit()
     await db.refresh(db_portfolio)
@@ -617,3 +670,156 @@ async def update_user_status(
     await db.commit()
     await db.refresh(target_user)
     return target_user
+
+
+# ==================== Dashboard Stats ====================
+
+@router.get("/dashboard/stats")
+async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
+    """Get dashboard statistics for admin overview."""
+    from datetime import datetime, timedelta
+    from models import SiteSetting
+
+    # Count totals and active counts for each resource
+    async def count_resource(model, active_field="is_active"):
+        total_result = await db.execute(select(func.count()).select_from(model))
+        total = total_result.scalar()
+        if hasattr(model, active_field):
+            active_result = await db.execute(
+                select(func.count()).select_from(model).where(getattr(model, active_field) == True)
+            )
+            active = active_result.scalar()
+        else:
+            active = total
+        return {"total": total, "active": active}
+
+    news_stats = await count_resource(News)
+    services_stats = await count_resource(Service)
+    products_stats = await count_resource(Product, "is_stock")
+    testimonials_stats = await count_resource(Testimonial)
+    portfolio_stats = await count_resource(Portfolio)
+
+    # User stats
+    user_total_result = await db.execute(select(func.count()).select_from(User))
+    user_total = user_total_result.scalar()
+    
+    role_counts = {}
+    for role in UserRole:
+        role_result = await db.execute(
+            select(func.count()).select_from(User).where(User.role == role)
+        )
+        role_counts[role.value] = role_result.scalar()
+
+    # Recent activity: get latest 10 updated items across all content types
+    recent_items = []
+    
+    # News
+    news_result = await db.execute(
+        select(News).order_by(News.updated_at.desc()).limit(3)
+    )
+    for item in news_result.scalars().all():
+        recent_items.append({
+            "type": "news",
+            "type_label": "最新消息",
+            "title": item.title,
+            "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+        })
+
+    # Services
+    svc_result = await db.execute(
+        select(Service).order_by(Service.updated_at.desc()).limit(3)
+    )
+    for item in svc_result.scalars().all():
+        recent_items.append({
+            "type": "service",
+            "type_label": "服務項目",
+            "title": item.name,
+            "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+        })
+
+    # Products
+    prod_result = await db.execute(
+        select(Product).order_by(Product.updated_at.desc()).limit(3)
+    )
+    for item in prod_result.scalars().all():
+        recent_items.append({
+            "type": "product",
+            "type_label": "產品",
+            "title": item.name,
+            "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+        })
+
+    # Testimonials
+    test_result = await db.execute(
+        select(Testimonial).order_by(Testimonial.updated_at.desc()).limit(2)
+    )
+    for item in test_result.scalars().all():
+        recent_items.append({
+            "type": "testimonial",
+            "type_label": "客戶評價",
+            "title": item.customer_name,
+            "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+        })
+
+    # Portfolio
+    port_result = await db.execute(
+        select(Portfolio).order_by(Portfolio.updated_at.desc()).limit(2)
+    )
+    for item in port_result.scalars().all():
+        recent_items.append({
+            "type": "portfolio",
+            "type_label": "對比圖",
+            "title": item.title,
+            "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+        })
+
+    # Sort all by updated_at desc and take top 10
+    recent_items.sort(key=lambda x: x["updated_at"] or "", reverse=True)
+    recent_items = recent_items[:10]
+
+    return {
+        "counts": {
+            "news": news_stats,
+            "services": services_stats,
+            "products": products_stats,
+            "testimonials": testimonials_stats,
+            "portfolio": portfolio_stats,
+            "users": {
+                "total": user_total,
+                "roles": role_counts,
+            },
+        },
+        "recent_activity": recent_items,
+    }
+
+
+# ==================== Site Settings ====================
+
+@router.get("/settings")
+async def get_site_settings(db: AsyncSession = Depends(get_db)):
+    """Get all site settings as a key-value object."""
+    from models import SiteSetting
+    result = await db.execute(select(SiteSetting))
+    settings_list = result.scalars().all()
+    return {s.key: s.value for s in settings_list}
+
+
+@router.put("/settings")
+async def update_site_settings(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """Batch update site settings. Accepts a dict of {key: value}."""
+    from models import SiteSetting
+    for key, value in payload.items():
+        result = await db.execute(select(SiteSetting).where(SiteSetting.key == key))
+        setting = result.scalar_one_or_none()
+        if setting:
+            setting.value = str(value) if value is not None else ""
+        else:
+            db.add(SiteSetting(key=key, value=str(value) if value is not None else ""))
+    await db.commit()
+    # Return updated settings
+    result = await db.execute(select(SiteSetting))
+    settings_list = result.scalars().all()
+    return {s.key: s.value for s in settings_list}
