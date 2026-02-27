@@ -22,7 +22,7 @@ async def get_staff_menu(db: AsyncSession = Depends(get_db)):
     """Get list of active services for staff task selection."""
     result = await db.execute(
         select(Service)
-        .where(Service.is_active == True)
+        .where(Service.is_active == True, Service.deleted_at.is_(None))
         .order_by(Service.category, Service.name)
     )
     return result.scalars().all()
@@ -101,6 +101,7 @@ async def get_my_logs(
         select(WorkLog)
         .where(WorkLog.user_id == current_user.id)
         .where(WorkLog.date == today)
+        .where(WorkLog.deleted_at.is_(None))
         .order_by(WorkLog.created_at.desc())
     )
     work_logs = result.scalars().all()

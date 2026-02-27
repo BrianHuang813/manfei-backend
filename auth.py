@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
@@ -71,9 +72,9 @@ def decode_token(token: str) -> TokenData:
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
-        # Convert sub from string to int (JWT spec requires sub to be a string)
+        # Convert sub from string to UUID (JWT spec requires sub to be a string)
         try:
-            user_id = int(user_id_str)
+            user_id = uuid.UUID(user_id_str)
         except (ValueError, TypeError):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, func
@@ -5,7 +7,7 @@ from sqlalchemy.orm import selectinload
 from typing import List
 
 from database import get_db
-from models import User, UserRole, News, Service, Product, Testimonial, Portfolio, WorkLog
+from models import User, UserRole, MemberTier, News, Service, Product, Testimonial, Portfolio, WorkLog, Transaction
 from schemas import (
     NewsCreate, NewsUpdate, NewsResponse,
     ServiceCreate, ServiceUpdate, ServiceResponse,
@@ -18,6 +20,10 @@ from schemas import (
     UserAdminResponse,
     UserRoleUpdate,
     UserStatusUpdate,
+    TransactionCreate, TransactionResponse,
+    MemberTierUpdate,
+    CustomerSummaryResponse,
+    CustomerDetailResponse,
 )
 from auth import require_admin, get_current_user
 
@@ -35,6 +41,7 @@ async def list_news(
     """List all news items ordered by sort_order."""
     result = await db.execute(
         select(News)
+        .where(News.deleted_at.is_(None))
         .order_by(News.sort_order, News.date.desc())
         .offset(skip)
         .limit(limit)
@@ -45,7 +52,7 @@ async def list_news(
 @router.get("/news/{news_id}", response_model=NewsResponse)
 async def get_news(news_id: int, db: AsyncSession = Depends(get_db)):
     """Get a specific news item."""
-    result = await db.execute(select(News).where(News.id == news_id))
+    result = await db.execute(select(News).where(News.id == news_id, News.deleted_at.is_(None)))
     news = result.scalar_one_or_none()
     if not news:
         raise HTTPException(status_code=404, detail="News not found")
@@ -73,7 +80,7 @@ async def create_news(news: NewsCreate, db: AsyncSession = Depends(get_db)):
 @router.put("/news/{news_id}", response_model=NewsResponse)
 async def update_news(news_id: int, news: NewsUpdate, db: AsyncSession = Depends(get_db)):
     """Update a news item."""
-    result = await db.execute(select(News).where(News.id == news_id))
+    result = await db.execute(select(News).where(News.id == news_id, News.deleted_at.is_(None)))
     db_news = result.scalar_one_or_none()
     if not db_news:
         raise HTTPException(status_code=404, detail="News not found")
@@ -88,13 +95,13 @@ async def update_news(news_id: int, news: NewsUpdate, db: AsyncSession = Depends
 
 @router.delete("/news/{news_id}", response_model=MessageResponse)
 async def delete_news(news_id: int, db: AsyncSession = Depends(get_db)):
-    """Delete a news item."""
-    result = await db.execute(select(News).where(News.id == news_id))
+    """Soft delete a news item."""
+    result = await db.execute(select(News).where(News.id == news_id, News.deleted_at.is_(None)))
     db_news = result.scalar_one_or_none()
     if not db_news:
         raise HTTPException(status_code=404, detail="News not found")
-    
-    await db.delete(db_news)
+
+    db_news.deleted_at = func.now()
     await db.commit()
     return {"message": "News deleted successfully"}
 
@@ -110,6 +117,7 @@ async def list_services(
     """List all services ordered by category and sort_order."""
     result = await db.execute(
         select(Service)
+        .where(Service.deleted_at.is_(None))
         .order_by(Service.category, Service.sort_order)
         .offset(skip)
         .limit(limit)
@@ -120,7 +128,7 @@ async def list_services(
 @router.get("/services/{service_id}", response_model=ServiceResponse)
 async def get_service(service_id: int, db: AsyncSession = Depends(get_db)):
     """Get a specific service."""
-    result = await db.execute(select(Service).where(Service.id == service_id))
+    result = await db.execute(select(Service).where(Service.id == service_id, Service.deleted_at.is_(None)))
     service = result.scalar_one_or_none()
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
@@ -147,7 +155,7 @@ async def create_service(service: ServiceCreate, db: AsyncSession = Depends(get_
 @router.put("/services/{service_id}", response_model=ServiceResponse)
 async def update_service(service_id: int, service: ServiceUpdate, db: AsyncSession = Depends(get_db)):
     """Update a service."""
-    result = await db.execute(select(Service).where(Service.id == service_id))
+    result = await db.execute(select(Service).where(Service.id == service_id, Service.deleted_at.is_(None)))
     db_service = result.scalar_one_or_none()
     if not db_service:
         raise HTTPException(status_code=404, detail="Service not found")
@@ -162,13 +170,13 @@ async def update_service(service_id: int, service: ServiceUpdate, db: AsyncSessi
 
 @router.delete("/services/{service_id}", response_model=MessageResponse)
 async def delete_service(service_id: int, db: AsyncSession = Depends(get_db)):
-    """Delete a service."""
-    result = await db.execute(select(Service).where(Service.id == service_id))
+    """Soft delete a service."""
+    result = await db.execute(select(Service).where(Service.id == service_id, Service.deleted_at.is_(None)))
     db_service = result.scalar_one_or_none()
     if not db_service:
         raise HTTPException(status_code=404, detail="Service not found")
-    
-    await db.delete(db_service)
+
+    db_service.deleted_at = func.now()
     await db.commit()
     return {"message": "Service deleted successfully"}
 
@@ -184,6 +192,7 @@ async def list_products(
     """List all products ordered by sort_order."""
     result = await db.execute(
         select(Product)
+        .where(Product.deleted_at.is_(None))
         .order_by(Product.sort_order)
         .offset(skip)
         .limit(limit)
@@ -194,7 +203,7 @@ async def list_products(
 @router.get("/products/{product_id}", response_model=ProductResponse)
 async def get_product(product_id: int, db: AsyncSession = Depends(get_db)):
     """Get a specific product."""
-    result = await db.execute(select(Product).where(Product.id == product_id))
+    result = await db.execute(select(Product).where(Product.id == product_id, Product.deleted_at.is_(None)))
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -221,7 +230,7 @@ async def create_product(product: ProductCreate, db: AsyncSession = Depends(get_
 @router.put("/products/{product_id}", response_model=ProductResponse)
 async def update_product(product_id: int, product: ProductUpdate, db: AsyncSession = Depends(get_db)):
     """Update a product."""
-    result = await db.execute(select(Product).where(Product.id == product_id))
+    result = await db.execute(select(Product).where(Product.id == product_id, Product.deleted_at.is_(None)))
     db_product = result.scalar_one_or_none()
     if not db_product:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -236,13 +245,13 @@ async def update_product(product_id: int, product: ProductUpdate, db: AsyncSessi
 
 @router.delete("/products/{product_id}", response_model=MessageResponse)
 async def delete_product(product_id: int, db: AsyncSession = Depends(get_db)):
-    """Delete a product."""
-    result = await db.execute(select(Product).where(Product.id == product_id))
+    """Soft delete a product."""
+    result = await db.execute(select(Product).where(Product.id == product_id, Product.deleted_at.is_(None)))
     db_product = result.scalar_one_or_none()
     if not db_product:
         raise HTTPException(status_code=404, detail="Product not found")
-    
-    await db.delete(db_product)
+
+    db_product.deleted_at = func.now()
     await db.commit()
     return {"message": "Product deleted successfully"}
 
@@ -258,6 +267,7 @@ async def list_testimonials(
     """List all testimonials ordered by sort_order."""
     result = await db.execute(
         select(Testimonial)
+        .where(Testimonial.deleted_at.is_(None))
         .order_by(Testimonial.sort_order)
         .offset(skip)
         .limit(limit)
@@ -268,7 +278,7 @@ async def list_testimonials(
 @router.get("/testimonials/{testimonial_id}", response_model=TestimonialResponse)
 async def get_testimonial(testimonial_id: int, db: AsyncSession = Depends(get_db)):
     """Get a specific testimonial."""
-    result = await db.execute(select(Testimonial).where(Testimonial.id == testimonial_id))
+    result = await db.execute(select(Testimonial).where(Testimonial.id == testimonial_id, Testimonial.deleted_at.is_(None)))
     testimonial = result.scalar_one_or_none()
     if not testimonial:
         raise HTTPException(status_code=404, detail="Testimonial not found")
@@ -295,7 +305,7 @@ async def create_testimonial(testimonial: TestimonialCreate, db: AsyncSession = 
 @router.put("/testimonials/{testimonial_id}", response_model=TestimonialResponse)
 async def update_testimonial(testimonial_id: int, testimonial: TestimonialUpdate, db: AsyncSession = Depends(get_db)):
     """Update a testimonial."""
-    result = await db.execute(select(Testimonial).where(Testimonial.id == testimonial_id))
+    result = await db.execute(select(Testimonial).where(Testimonial.id == testimonial_id, Testimonial.deleted_at.is_(None)))
     db_testimonial = result.scalar_one_or_none()
     if not db_testimonial:
         raise HTTPException(status_code=404, detail="Testimonial not found")
@@ -310,13 +320,13 @@ async def update_testimonial(testimonial_id: int, testimonial: TestimonialUpdate
 
 @router.delete("/testimonials/{testimonial_id}", response_model=MessageResponse)
 async def delete_testimonial(testimonial_id: int, db: AsyncSession = Depends(get_db)):
-    """Delete a testimonial."""
-    result = await db.execute(select(Testimonial).where(Testimonial.id == testimonial_id))
+    """Soft delete a testimonial."""
+    result = await db.execute(select(Testimonial).where(Testimonial.id == testimonial_id, Testimonial.deleted_at.is_(None)))
     db_testimonial = result.scalar_one_or_none()
     if not db_testimonial:
         raise HTTPException(status_code=404, detail="Testimonial not found")
-    
-    await db.delete(db_testimonial)
+
+    db_testimonial.deleted_at = func.now()
     await db.commit()
     return {"message": "Testimonial deleted successfully"}
 
@@ -333,6 +343,7 @@ async def list_portfolio(
     result = await db.execute(
         select(Portfolio)
         .options(selectinload(Portfolio.service))
+        .where(Portfolio.deleted_at.is_(None))
         .order_by(Portfolio.sort_order)
         .offset(skip)
         .limit(limit)
@@ -362,7 +373,7 @@ async def list_portfolio(
 @router.get("/portfolio/{portfolio_id}", response_model=PortfolioResponse)
 async def get_portfolio(portfolio_id: int, db: AsyncSession = Depends(get_db)):
     """Get a specific portfolio item."""
-    result = await db.execute(select(Portfolio).where(Portfolio.id == portfolio_id))
+    result = await db.execute(select(Portfolio).where(Portfolio.id == portfolio_id, Portfolio.deleted_at.is_(None)))
     portfolio = result.scalar_one_or_none()
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -403,7 +414,7 @@ async def create_portfolio(portfolio: PortfolioCreate, db: AsyncSession = Depend
 @router.put("/portfolio/{portfolio_id}", response_model=PortfolioResponse)
 async def update_portfolio(portfolio_id: int, portfolio: PortfolioUpdate, db: AsyncSession = Depends(get_db)):
     """Update a portfolio item."""
-    result = await db.execute(select(Portfolio).where(Portfolio.id == portfolio_id))
+    result = await db.execute(select(Portfolio).where(Portfolio.id == portfolio_id, Portfolio.deleted_at.is_(None)))
     db_portfolio = result.scalar_one_or_none()
     if not db_portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -421,13 +432,13 @@ async def update_portfolio(portfolio_id: int, portfolio: PortfolioUpdate, db: As
 
 @router.delete("/portfolio/{portfolio_id}", response_model=MessageResponse)
 async def delete_portfolio(portfolio_id: int, db: AsyncSession = Depends(get_db)):
-    """Delete a portfolio item."""
-    result = await db.execute(select(Portfolio).where(Portfolio.id == portfolio_id))
+    """Soft delete a portfolio item."""
+    result = await db.execute(select(Portfolio).where(Portfolio.id == portfolio_id, Portfolio.deleted_at.is_(None)))
     db_portfolio = result.scalar_one_or_none()
     if not db_portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
-    
-    await db.delete(db_portfolio)
+
+    db_portfolio.deleted_at = func.now()
     await db.commit()
     return {"message": "Portfolio deleted successfully"}
 
@@ -506,12 +517,12 @@ async def list_all_work_logs(
     db: AsyncSession = Depends(get_db),
     skip: int = 0,
     limit: int = 100,
-    user_id: int = None,
+    user_id: uuid.UUID = None,
     start_date: str = None,
     end_date: str = None
 ):
     """List all staff work logs with optional filters."""
-    query = select(WorkLog).order_by(WorkLog.date.desc(), WorkLog.created_at.desc())
+    query = select(WorkLog).where(WorkLog.deleted_at.is_(None)).order_by(WorkLog.date.desc(), WorkLog.created_at.desc())
     
     if user_id:
         query = query.where(WorkLog.user_id == user_id)
@@ -566,14 +577,14 @@ async def list_users(
 ):
     """List all users for admin management, ordered by created_at descending."""
     result = await db.execute(
-        select(User).order_by(User.created_at.desc())
+        select(User).where(User.deleted_at.is_(None)).order_by(User.created_at.desc())
     )
     return result.scalars().all()
 
 
 @router.patch("/users/{user_id}/role", response_model=UserAdminResponse)
 async def update_user_role(
-    user_id: int,
+    user_id: uuid.UUID,
     payload: UserRoleUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -629,7 +640,7 @@ async def update_user_role(
 
 @router.patch("/users/{user_id}/status", response_model=UserAdminResponse)
 async def update_user_status(
-    user_id: int,
+    user_id: uuid.UUID,
     payload: UserStatusUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -670,6 +681,149 @@ async def update_user_status(
     await db.commit()
     await db.refresh(target_user)
     return target_user
+
+
+# ==================== Customer Management ====================
+
+@router.get("/customers", response_model=List[CustomerSummaryResponse])
+async def list_customers(
+    db: AsyncSession = Depends(get_db),
+):
+    """List all customers with aggregated transaction stats."""
+    result = await db.execute(
+        select(User)
+        .where(User.role == UserRole.customer, User.deleted_at.is_(None))
+        .order_by(User.created_at.desc())
+    )
+    customers = result.scalars().all()
+
+    enriched = []
+    for c in customers:
+        # Get transaction stats
+        stats_result = await db.execute(
+            select(
+                func.count(Transaction.id).label("txn_count"),
+                func.coalesce(func.sum(Transaction.amount), 0).label("total_spent"),
+            )
+            .where(
+                Transaction.user_id == c.id,
+                Transaction.deleted_at.is_(None),
+            )
+        )
+        row = stats_result.one()
+        enriched.append({
+            "id": c.id,
+            "line_user_id": c.line_user_id,
+            "display_name": c.display_name,
+            "role": c.role,
+            "tier": c.tier,
+            "is_active": c.is_active,
+            "created_at": c.created_at,
+            "transaction_count": row.txn_count,
+            "total_spent": row.total_spent,
+        })
+    return enriched
+
+
+@router.get("/customers/{user_id}", response_model=CustomerDetailResponse)
+async def get_customer_detail(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get a single customer's full detail including transactions."""
+    result = await db.execute(select(User).where(User.id == user_id, User.deleted_at.is_(None)))
+    customer = result.scalar_one_or_none()
+    if not customer:
+        raise HTTPException(status_code=404, detail="顧客不存在")
+
+    # Fetch transactions
+    txn_result = await db.execute(
+        select(Transaction)
+        .where(Transaction.user_id == user_id, Transaction.deleted_at.is_(None))
+        .order_by(Transaction.created_at.desc())
+    )
+    transactions = txn_result.scalars().all()
+
+    total_spent = sum(t.amount for t in transactions)
+
+    return {
+        "id": customer.id,
+        "line_user_id": customer.line_user_id,
+        "display_name": customer.display_name,
+        "role": customer.role,
+        "tier": customer.tier,
+        "is_active": customer.is_active,
+        "created_at": customer.created_at,
+        "updated_at": customer.updated_at,
+        "transaction_count": len(transactions),
+        "total_spent": total_spent,
+        "transactions": transactions,
+    }
+
+
+@router.patch("/customers/{user_id}/tier", response_model=UserAdminResponse)
+async def update_customer_tier(
+    user_id: uuid.UUID,
+    payload: MemberTierUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a customer's member tier."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    target_user = result.scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="顧客不存在")
+
+    target_user.tier = payload.tier
+    await db.commit()
+    await db.refresh(target_user)
+    return target_user
+
+
+@router.post("/customers/{user_id}/transactions", response_model=TransactionResponse, status_code=201)
+async def create_customer_transaction(
+    user_id: uuid.UUID,
+    payload: TransactionCreate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Manually add a transaction / consumption record for a customer."""
+    # Verify customer exists
+    result = await db.execute(select(User).where(User.id == user_id))
+    target_user = result.scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="顧客不存在")
+
+    txn = Transaction(
+        user_id=user_id,
+        service_name=payload.service_name,
+        amount=payload.amount,
+    )
+    db.add(txn)
+    await db.commit()
+    await db.refresh(txn)
+    return txn
+
+
+@router.delete("/customers/{user_id}/transactions/{txn_id}", response_model=MessageResponse)
+async def delete_customer_transaction(
+    user_id: uuid.UUID,
+    txn_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Soft-delete a transaction record."""
+    result = await db.execute(
+        select(Transaction).where(
+            Transaction.id == txn_id,
+            Transaction.user_id == user_id,
+            Transaction.deleted_at.is_(None),
+        )
+    )
+    txn = result.scalar_one_or_none()
+    if not txn:
+        raise HTTPException(status_code=404, detail="消費記錄不存在")
+
+    txn.deleted_at = func.now()
+    await db.commit()
+    return {"message": "消費記錄已刪除"}
 
 
 # ==================== Dashboard Stats ====================

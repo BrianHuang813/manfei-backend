@@ -1,7 +1,9 @@
+import uuid as _uuid
+
 from pydantic import BaseModel, Field, validator
 from typing import Optional
 from datetime import date, datetime
-from models import UserRole
+from models import UserRole, MemberTier
 
 
 # ==================== Base Schemas ====================
@@ -47,10 +49,11 @@ class UserStatusUpdate(BaseModel):
 
 class UserAdminResponse(BaseModel):
     """Schema for admin user listing (excludes sensitive data)."""
-    id: int
+    id: _uuid.UUID
     line_user_id: str
     display_name: str
     role: UserRole
+    tier: MemberTier
     is_active: bool
     created_at: datetime
 
@@ -59,10 +62,11 @@ class UserAdminResponse(BaseModel):
 
 
 class UserResponse(BaseModel):
-    id: int
+    id: _uuid.UUID
     line_user_id: str
     display_name: str
     role: UserRole
+    tier: MemberTier
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -252,7 +256,7 @@ class WorkLogUpdate(BaseModel):
 
 class WorkLogResponse(BaseModel):
     id: int
-    user_id: int
+    user_id: _uuid.UUID
     date: date
     service_id: Optional[int]
     custom_task_name: Optional[str]
@@ -277,7 +281,7 @@ class Token(BaseModel):
 
 
 class TokenData(BaseModel):
-    user_id: Optional[int] = None
+    user_id: Optional[_uuid.UUID] = None
     role: Optional[UserRole] = None
 
 
@@ -299,3 +303,63 @@ class BatchSortOrderUpdate(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+# ==================== Transaction Schemas ====================
+
+class TransactionCreate(BaseModel):
+    service_name: str = Field(..., min_length=1, max_length=255)
+    amount: int = Field(..., ge=0)
+
+
+class TransactionResponse(BaseModel):
+    id: _uuid.UUID
+    user_id: _uuid.UUID
+    service_name: str
+    amount: int
+    created_at: datetime
+    deleted_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ==================== Member / Customer Schemas ====================
+
+class MemberTierUpdate(BaseModel):
+    """Schema for updating a customer's member tier."""
+    tier: MemberTier
+
+
+class CustomerSummaryResponse(BaseModel):
+    """Schema for admin customer listing with aggregated stats."""
+    id: _uuid.UUID
+    line_user_id: str
+    display_name: str
+    role: UserRole
+    tier: MemberTier
+    is_active: bool
+    created_at: datetime
+    transaction_count: int = 0
+    total_spent: int = 0
+
+    class Config:
+        from_attributes = True
+
+
+class CustomerDetailResponse(BaseModel):
+    """Schema for single customer detail with transactions."""
+    id: _uuid.UUID
+    line_user_id: str
+    display_name: str
+    role: UserRole
+    tier: MemberTier
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    transaction_count: int = 0
+    total_spent: int = 0
+    transactions: list[TransactionResponse] = []
+
+    class Config:
+        from_attributes = True

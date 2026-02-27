@@ -1,13 +1,15 @@
+import uuid
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from urllib.parse import quote
-import secrets
 
 from database import get_db
-from models import User, UserRole
-from schemas import Token, UserResponse
+from models import User, UserRole, Transaction
+from schemas import Token, UserResponse, TransactionResponse
 from config import settings
 from main import limiter
 from auth import (
@@ -136,6 +138,28 @@ async def get_current_user_info(
     return current_user
 
 
+@router.get("/me/transactions", response_model=list[TransactionResponse])
+async def get_my_transactions(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    skip: int = 0,
+    limit: int = 100,
+):
+    """Get the current user's transaction / consumption history."""
+    from typing import List
+    result = await db.execute(
+        select(Transaction)
+        .where(
+            Transaction.user_id == current_user.id,
+            Transaction.deleted_at.is_(None),
+        )
+        .order_by(Transaction.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    return result.scalars().all()
+
+
 @router.post("/refresh", response_model=Token)
 @limiter.limit("5/minute")
 async def refresh_access_token(
@@ -155,9 +179,9 @@ async def refresh_access_token(
                 detail="Invalid refresh token"
             )
         
-        # Convert sub from string to int (JWT spec requires sub to be a string)
+        # Convert sub from string to UUID (JWT spec requires sub to be a string)
         try:
-            user_id = int(user_id_str)
+            user_id = uuid.UUID(user_id_str)
         except (ValueError, TypeError):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

@@ -25,7 +25,7 @@ async def get_public_news(
     """Get published news ordered by date (most recent first)."""
     result = await db.execute(
         select(News)
-        .where(News.is_active == True)
+        .where(News.is_active == True, News.deleted_at.is_(None))
         .order_by(News.date.desc())
         .limit(limit)
     )
@@ -40,7 +40,7 @@ async def get_public_news_detail(
     """Get a single published news article by ID."""
     result = await db.execute(
         select(News)
-        .where(News.id == news_id, News.is_active == True)
+        .where(News.id == news_id, News.is_active == True, News.deleted_at.is_(None))
     )
     news = result.scalar_one_or_none()
     if not news:
@@ -53,7 +53,7 @@ async def get_public_services(db: AsyncSession = Depends(get_db)):
     """Get active services ordered by category and sort_order."""
     result = await db.execute(
         select(Service)
-        .where(Service.is_active == True)
+        .where(Service.is_active == True, Service.deleted_at.is_(None))
         .order_by(Service.category, Service.sort_order, Service.name)
     )
     return result.scalars().all()
@@ -64,7 +64,7 @@ async def get_services_by_category(db: AsyncSession = Depends(get_db)):
     """Get active services grouped by category."""
     result = await db.execute(
         select(Service)
-        .where(Service.is_active == True)
+        .where(Service.is_active == True, Service.deleted_at.is_(None))
         .order_by(Service.category, Service.sort_order, Service.name)
     )
     services = result.scalars().all()
@@ -90,7 +90,7 @@ async def get_public_products(db: AsyncSession = Depends(get_db)):
     """Get in-stock products ordered by sort_order."""
     result = await db.execute(
         select(Product)
-        .where(Product.is_stock == True)
+        .where(Product.is_stock == True, Product.deleted_at.is_(None))
         .order_by(Product.sort_order, Product.name)
     )
     return result.scalars().all()
@@ -104,7 +104,7 @@ async def get_public_product_detail(
     """Get a single in-stock product by ID."""
     result = await db.execute(
         select(Product)
-        .where(Product.id == product_id, Product.is_stock == True)
+        .where(Product.id == product_id, Product.is_stock == True, Product.deleted_at.is_(None))
     )
     product = result.scalar_one_or_none()
     if not product:
@@ -117,7 +117,7 @@ async def get_public_testimonials(db: AsyncSession = Depends(get_db)):
     """Get active testimonials ordered by sort_order."""
     result = await db.execute(
         select(Testimonial)
-        .where(Testimonial.is_active == True)
+        .where(Testimonial.is_active == True, Testimonial.deleted_at.is_(None))
         .order_by(Testimonial.sort_order)
     )
     return result.scalars().all()
@@ -128,7 +128,7 @@ async def get_public_portfolio(db: AsyncSession = Depends(get_db)):
     """Get active portfolio items ordered by sort_order."""
     result = await db.execute(
         select(Portfolio)
-        .where(Portfolio.is_active == True)
+        .where(Portfolio.is_active == True, Portfolio.deleted_at.is_(None))
         .order_by(Portfolio.sort_order)
     )
     return result.scalars().all()
@@ -139,7 +139,7 @@ async def get_portfolio_by_category(db: AsyncSession = Depends(get_db)):
     """Get active portfolio items grouped by category."""
     result = await db.execute(
         select(Portfolio)
-        .where(Portfolio.is_active == True)
+        .where(Portfolio.is_active == True, Portfolio.deleted_at.is_(None))
         .order_by(Portfolio.category, Portfolio.sort_order)
     )
     portfolio_items = result.scalars().all()
