@@ -30,12 +30,6 @@ async def lifespan(app: FastAPI):
     # Initialize Cloudinary
     init_cloudinary()
     
-    # Create all tables that don't exist yet
-    print("🗄️  Checking and creating database tables...")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    print("✅ Database tables are ready.")
-    
     yield
     
     # Shutdown
