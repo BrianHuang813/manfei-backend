@@ -2,7 +2,7 @@ import uuid as _uuid
 
 from pydantic import BaseModel, Field, validator
 from typing import Optional
-from datetime import date, datetime
+from datetime import date as Date, datetime
 from models import UserRole, MemberTier
 
 
@@ -82,7 +82,7 @@ class NewsBase(BaseModel):
     content: str
     cover_image: Optional[str] = Field(None, max_length=500)
     category: str = Field(..., max_length=100)
-    date: date
+    date: Date
     is_active: bool = True
 
 
@@ -95,7 +95,7 @@ class NewsUpdate(BaseModel):
     content: Optional[str] = None
     cover_image: Optional[str] = Field(None, max_length=500)
     category: Optional[str] = Field(None, max_length=100)
-    date: Optional[date] = None
+    date: Optional[Date] = None
     is_active: Optional[bool] = None
     sort_order: Optional[int] = None
 
@@ -227,7 +227,7 @@ class PortfolioResponse(BaseSchema, PortfolioBase):
 # ==================== WorkLog Schemas ====================
 
 class WorkLogBase(BaseModel):
-    date: date
+    date: Date
     service_id: Optional[int] = None
     custom_task_name: Optional[str] = Field(None, max_length=255)
     hours: float = Field(..., gt=0)
@@ -248,7 +248,7 @@ class WorkLogCreate(WorkLogBase):
 
 
 class WorkLogUpdate(BaseModel):
-    date: Optional[date] = None
+    date: Optional[Date] = None
     service_id: Optional[int] = None
     custom_task_name: Optional[str] = Field(None, max_length=255)
     hours: Optional[float] = Field(None, gt=0)
@@ -257,7 +257,7 @@ class WorkLogUpdate(BaseModel):
 class WorkLogResponse(BaseModel):
     id: int
     user_id: _uuid.UUID
-    date: date
+    date: Date
     service_id: Optional[int]
     custom_task_name: Optional[str]
     hours: float
