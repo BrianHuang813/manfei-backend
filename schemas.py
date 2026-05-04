@@ -310,6 +310,13 @@ class MessageResponse(BaseModel):
 class TransactionCreate(BaseModel):
     service_name: str = Field(..., min_length=1, max_length=255)
     amount: int = Field(..., ge=0)
+    transaction_date: Optional[Date] = None  # If not provided, backend defaults to today
+
+
+class TransactionUpdate(BaseModel):
+    service_name: Optional[str] = Field(None, min_length=1, max_length=255)
+    amount: Optional[int] = Field(None, ge=0)
+    transaction_date: Optional[Date] = None
 
 
 class TransactionResponse(BaseModel):
@@ -317,11 +324,25 @@ class TransactionResponse(BaseModel):
     user_id: _uuid.UUID
     service_name: str
     amount: int
+    transaction_date: Date
+    sort_order: int
     created_at: datetime
+    updated_at: datetime
     deleted_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
+
+
+class TransactionSortItem(BaseModel):
+    """Item for batch transaction sorting."""
+    id: _uuid.UUID
+    sort_order: int
+
+
+class TransactionBatchSort(BaseModel):
+    """Batch transaction sort order update."""
+    items: list[TransactionSortItem]
 
 
 # ==================== Member / Customer Schemas ====================

@@ -177,8 +177,14 @@ class Transaction(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     service_name = Column(String(255), nullable=False)
     amount = Column(Integer, nullable=False)
+    # Transaction date — when the service was actually provided (separate from created_at)
+    transaction_date = Column(Date, nullable=False, index=True, server_default=func.current_date())
+    # Manual sort order for customer-managed transaction ordering
+    sort_order = Column(Integer, nullable=False, default=0, index=True)
     # TIMEZONE: Always use timezone-aware datetimes
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    # Updated timestamp for edit tracking
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     # SOFT DELETE: timestamp-based
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 

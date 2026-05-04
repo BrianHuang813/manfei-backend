@@ -20,7 +20,7 @@ from schemas import (
     UserAdminResponse,
     UserRoleUpdate,
     UserStatusUpdate,
-    TransactionCreate, TransactionResponse,
+    TransactionCreate, TransactionResponse, TransactionUpdate, TransactionBatchSort,
     MemberTierUpdate,
     CustomerSummaryResponse,
     CustomerDetailResponse,
@@ -736,11 +736,11 @@ async def get_customer_detail(
     if not customer:
         raise HTTPException(status_code=404, detail="顧客不存在")
 
-    # Fetch transactions
+    # Fetch transactions ordered by sort_order (custom order), then by created_at for secondary sort
     txn_result = await db.execute(
         select(Transaction)
         .where(Transaction.user_id == user_id, Transaction.deleted_at.is_(None))
-        .order_by(Transaction.created_at.desc())
+        .order_by(Transaction.sort_order.asc(), Transaction.created_at.desc())
     )
     transactions = txn_result.scalars().all()
 
@@ -792,10 +792,24 @@ async def create_customer_transaction(
     if not target_user:
         raise HTTPException(status_code=404, detail="顧客不存在")
 
+    # Determine transaction_date: use provided value or default to today
+    from datetime import date
+    transaction_date = payload.transaction_date or date.today()
+
+    # Get next sort_order for this user (max existing + 1)
+    max_sort_result = await db.execute(
+        select(func.max(Transaction.sort_order))
+        .where(Transaction.user_id == user_id, Transaction.deleted_at.is_(None))
+    )
+    max_sort = max_sort_result.scalar() or -1
+    next_sort_order = max_sort + 1
+
     txn = Transaction(
         user_id=user_id,
         service_name=payload.service_name,
         amount=payload.amount,
+        transaction_date=transaction_date,
+        sort_order=next_sort_order,
     )
     db.add(txn)
     await db.commit()
@@ -824,6 +838,93 @@ async def delete_customer_transaction(
     txn.deleted_at = func.now()
     await db.commit()
     return {"message": "消費記錄已刪除"}
+
+
+@router.put("/customers/{user_id}/transactions/{txn_id}", response_model=TransactionResponse)
+async def update_customer_transaction(
+    user_id: uuid.UUID,
+    txn_id: uuid.UUID,
+    payload: TransactionUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update transaction details (service_name, amount, transaction_date)."""
+    result = await db.execute(
+        select(Transaction).where(
+            Transaction.id == txn_id,
+            Transaction.user_id == user_id,
+            Transaction.deleted_at.is_(None),
+        )
+    )
+    txn = result.scalar_one_or_none()
+    if not txn:
+        raise HTTPException(status_code=404, detail="消費記錄不存在")
+
+    # Update only provided fields
+    if payload.service_name is not None:
+        txn.service_name = payload.service_name
+    if payload.amount is not None:
+        txn.amount = payload.amount
+    if payload.transaction_date is not None:
+        txn.transaction_date = payload.transaction_date
+
+    # updated_at will be auto-updated by SQLAlchemy onupdate
+    await db.commit()
+    await db.refresh(txn)
+    return txn
+
+
+@router.patch("/customers/{user_id}/transactions/reorder", response_model=MessageResponse)
+async def reorder_customer_transactions(
+    user_id: uuid.UUID,
+    payload: TransactionBatchSort,
+    db: AsyncSession = Depends(get_db),
+):
+    """Batch update transaction sort order."""
+    # Verify all transactions belong to this user
+    txn_ids = [item.id for item in payload.items]
+    verify_result = await db.execute(
+        select(func.count(Transaction.id)).where(
+            Transaction.id.in_(txn_ids),
+            Transaction.user_id == user_id,
+            Transaction.deleted_at.is_(None),
+        )
+    )
+    count = verify_result.scalar()
+    if count != len(payload.items):
+        raise HTTPException(status_code=400, detail="部分消費記錄不存在或不屬於該顧客")
+
+    # Update sort orders
+    for item in payload.items:
+        result = await db.execute(
+            select(Transaction).where(Transaction.id == item.id)
+        )
+        txn = result.scalar_one_or_none()
+        if txn:
+            txn.sort_order = item.sort_order
+
+    await db.commit()
+    return {"message": "消費記錄順序已更新"}
+
+
+@router.patch("/customers/{user_id}/profile", response_model=UserAdminResponse)
+async def update_customer_profile(
+    user_id: uuid.UUID,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin endpoint to update customer's display_name."""
+    result = await db.execute(select(User).where(User.id == user_id, User.deleted_at.is_(None)))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="顧客不存在")
+
+    # Only allow updating display_name
+    if "display_name" in payload:
+        user.display_name = payload["display_name"]
+
+    await db.commit()
+    await db.refresh(user)
+    return user
 
 
 # ==================== Dashboard Stats ====================

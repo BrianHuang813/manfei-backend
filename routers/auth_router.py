@@ -225,3 +225,25 @@ async def refresh_access_token(
 async def logout(current_user: User = Depends(get_current_user)):
     """Logout endpoint (client should remove tokens)."""
     return {"message": "Logged out successfully"}
+
+
+@router.patch("/me/profile", response_model=UserResponse)
+async def update_own_profile(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Member endpoint to update their own profile (display_name)."""
+    # Refresh user from DB to ensure we have the latest state
+    result = await db.execute(select(User).where(User.id == current_user.id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="使用者不存在")
+
+    # Only allow updating display_name
+    if "display_name" in payload and payload["display_name"]:
+        user.display_name = payload["display_name"]
+
+    await db.commit()
+    await db.refresh(user)
+    return user
