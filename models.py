@@ -175,7 +175,7 @@ class Transaction(Base):
     # SECURITY: Use UUID instead of auto-incrementing integers
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
-    service_name = Column(String(255), nullable=False)
+    service_name = Column(Text, nullable=False)
     amount = Column(Integer, nullable=False)
     # Transaction date — when the service was actually provided (separate from created_at)
     transaction_date = Column(Date, nullable=False, index=True, server_default=func.current_date())
