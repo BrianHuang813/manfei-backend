@@ -21,6 +21,7 @@ from schemas import (
     UserRoleUpdate,
     UserStatusUpdate,
     TransactionCreate, TransactionResponse, TransactionUpdate, TransactionBatchSort,
+    InstallmentPayRequest,
     MemberTierUpdate,
     CustomerSummaryResponse,
     CustomerDetailResponse,
@@ -810,6 +811,11 @@ async def create_customer_transaction(
         amount=payload.amount,
         transaction_date=transaction_date,
         sort_order=next_sort_order,
+        is_installment=payload.is_installment,
+        total_installments=payload.total_installments if payload.is_installment else None,
+        amount_per_installment=payload.amount_per_installment if payload.is_installment else None,
+        paid_installments=0,
+        paid_amount=0,
     )
     db.add(txn)
     await db.commit()
@@ -866,8 +872,42 @@ async def update_customer_transaction(
         txn.amount = payload.amount
     if payload.transaction_date is not None:
         txn.transaction_date = payload.transaction_date
+    if payload.total_installments is not None:
+        txn.total_installments = payload.total_installments
+    if payload.amount_per_installment is not None:
+        txn.amount_per_installment = payload.amount_per_installment
 
     # updated_at will be auto-updated by SQLAlchemy onupdate
+    await db.commit()
+    await db.refresh(txn)
+    return txn
+
+
+@router.post("/customers/{user_id}/transactions/{txn_id}/pay", response_model=TransactionResponse)
+async def pay_installment(
+    user_id: uuid.UUID,
+    txn_id: uuid.UUID,
+    payload: InstallmentPayRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Record one installment payment, incrementing paid_installments and paid_amount."""
+    result = await db.execute(
+        select(Transaction).where(
+            Transaction.id == txn_id,
+            Transaction.user_id == user_id,
+            Transaction.deleted_at.is_(None),
+        )
+    )
+    txn = result.scalar_one_or_none()
+    if not txn:
+        raise HTTPException(status_code=404, detail="消費記錄不存在")
+    if not txn.is_installment:
+        raise HTTPException(status_code=400, detail="此記錄非分期付款")
+    if txn.paid_installments >= txn.total_installments:
+        raise HTTPException(status_code=400, detail="分期已全數繳清")
+
+    txn.paid_installments += 1
+    txn.paid_amount += payload.amount
     await db.commit()
     await db.refresh(txn)
     return txn
