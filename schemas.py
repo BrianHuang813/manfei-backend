@@ -1,6 +1,6 @@
 import uuid as _uuid
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, model_validator
 from typing import Optional
 from datetime import date as Date, datetime
 from models import UserRole, MemberTier
@@ -310,10 +310,19 @@ class MessageResponse(BaseModel):
 class TransactionCreate(BaseModel):
     service_name: str = Field(..., min_length=1, max_length=255)
     amount: int = Field(..., ge=0)
-    transaction_date: Optional[Date] = None
+    transaction_date: Optional[Date] = None  # If not provided, backend defaults to today
     is_installment: bool = False
     total_installments: Optional[int] = Field(None, ge=2, le=120)
     amount_per_installment: Optional[int] = Field(None, ge=0)
+
+    @model_validator(mode='after')
+    def validate_installment_fields(self) -> 'TransactionCreate':
+        if self.is_installment:
+            if self.total_installments is None:
+                raise ValueError('total_installments is required when is_installment is True')
+            if self.amount_per_installment is None:
+                raise ValueError('amount_per_installment is required when is_installment is True')
+        return self
 
 
 class TransactionUpdate(BaseModel):
