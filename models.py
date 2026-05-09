@@ -188,5 +188,12 @@ class Transaction(Base):
     # SOFT DELETE: timestamp-based
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Installment payment fields (nullable = non-installment transactions)
+    is_installment = Column(Boolean, nullable=False, default=False, server_default='false')
+    total_installments = Column(Integer, nullable=True)
+    amount_per_installment = Column(Integer, nullable=True)
+    paid_installments = Column(Integer, nullable=False, default=0, server_default='0')
+    paid_amount = Column(Integer, nullable=False, default=0, server_default='0')
+
     # Relationships
     user = relationship("User", back_populates="transactions")
