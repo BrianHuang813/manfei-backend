@@ -310,13 +310,18 @@ class MessageResponse(BaseModel):
 class TransactionCreate(BaseModel):
     service_name: str = Field(..., min_length=1, max_length=255)
     amount: int = Field(..., ge=0)
-    transaction_date: Optional[Date] = None  # If not provided, backend defaults to today
+    transaction_date: Optional[Date] = None
+    is_installment: bool = False
+    total_installments: Optional[int] = Field(None, ge=2, le=120)
+    amount_per_installment: Optional[int] = Field(None, ge=0)
 
 
 class TransactionUpdate(BaseModel):
     service_name: Optional[str] = Field(None, min_length=1, max_length=255)
     amount: Optional[int] = Field(None, ge=0)
     transaction_date: Optional[Date] = None
+    total_installments: Optional[int] = Field(None, ge=2, le=120)
+    amount_per_installment: Optional[int] = Field(None, ge=0)
 
 
 class TransactionResponse(BaseModel):
@@ -326,6 +331,11 @@ class TransactionResponse(BaseModel):
     amount: int
     transaction_date: Date
     sort_order: int
+    is_installment: bool
+    total_installments: Optional[int] = None
+    amount_per_installment: Optional[int] = None
+    paid_installments: int
+    paid_amount: int
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None
@@ -343,6 +353,10 @@ class TransactionSortItem(BaseModel):
 class TransactionBatchSort(BaseModel):
     """Batch transaction sort order update."""
     items: list[TransactionSortItem]
+
+
+class InstallmentPayRequest(BaseModel):
+    amount: int = Field(..., ge=0)
 
 
 # ==================== Member / Customer Schemas ====================
