@@ -853,7 +853,7 @@ async def update_customer_transaction(
     payload: TransactionUpdate,
     db: AsyncSession = Depends(get_db),
 ):
-    """Update transaction details (service_name, amount, transaction_date)."""
+    """Update transaction details (service_name, amount, transaction_date, total_installments, amount_per_installment)."""
     result = await db.execute(
         select(Transaction).where(
             Transaction.id == txn_id,
@@ -873,6 +873,8 @@ async def update_customer_transaction(
     if payload.transaction_date is not None:
         txn.transaction_date = payload.transaction_date
     if payload.total_installments is not None:
+        if payload.total_installments < txn.paid_installments:
+            raise HTTPException(status_code=400, detail="總期數不可小於已繳期數")
         txn.total_installments = payload.total_installments
     if payload.amount_per_installment is not None:
         txn.amount_per_installment = payload.amount_per_installment
@@ -905,6 +907,10 @@ async def pay_installment(
         raise HTTPException(status_code=400, detail="此記錄非分期付款")
     if txn.paid_installments >= txn.total_installments:
         raise HTTPException(status_code=400, detail="分期已全數繳清")
+
+    remaining = txn.amount - txn.paid_amount
+    if payload.amount > remaining:
+        raise HTTPException(status_code=400, detail="繳款金額超過剩餘金額")
 
     txn.paid_installments += 1
     txn.paid_amount += payload.amount
