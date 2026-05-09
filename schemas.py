@@ -329,6 +329,7 @@ class TransactionUpdate(BaseModel):
     service_name: Optional[str] = Field(None, min_length=1, max_length=1000)
     amount: Optional[int] = Field(None, ge=0)
     transaction_date: Optional[Date] = None
+    is_installment: Optional[bool] = None
     total_installments: Optional[int] = Field(None, ge=2, le=120)
     amount_per_installment: Optional[int] = Field(None, ge=0)
 

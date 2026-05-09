@@ -865,6 +865,22 @@ async def update_customer_transaction(
     if not txn:
         raise HTTPException(status_code=404, detail="消費記錄不存在")
 
+    # Handle is_installment toggle first (before other field updates)
+    if payload.is_installment is not None and payload.is_installment != txn.is_installment:
+        if txn.paid_installments > 0:
+            raise HTTPException(status_code=400, detail="已有繳款紀錄，無法變更分期狀態")
+        if payload.is_installment:
+            total = payload.total_installments
+            per = payload.amount_per_installment
+            if not total or not per:
+                raise HTTPException(status_code=400, detail="開啟分期付款需提供總期數和每期金額")
+            txn.total_installments = total
+            txn.amount_per_installment = per
+        else:
+            txn.total_installments = None
+            txn.amount_per_installment = None
+        txn.is_installment = payload.is_installment
+
     # Update only provided fields
     if payload.service_name is not None:
         txn.service_name = payload.service_name
@@ -872,12 +888,13 @@ async def update_customer_transaction(
         txn.amount = payload.amount
     if payload.transaction_date is not None:
         txn.transaction_date = payload.transaction_date
-    if payload.total_installments is not None:
-        if payload.total_installments < txn.paid_installments:
-            raise HTTPException(status_code=400, detail="總期數不可小於已繳期數")
-        txn.total_installments = payload.total_installments
-    if payload.amount_per_installment is not None:
-        txn.amount_per_installment = payload.amount_per_installment
+    if txn.is_installment:
+        if payload.total_installments is not None:
+            if payload.total_installments < (txn.paid_installments or 0):
+                raise HTTPException(status_code=400, detail="總期數不可小於已繳期數")
+            txn.total_installments = payload.total_installments
+        if payload.amount_per_installment is not None:
+            txn.amount_per_installment = payload.amount_per_installment
 
     # updated_at will be auto-updated by SQLAlchemy onupdate
     await db.commit()
